@@ -1,30 +1,36 @@
 // server.js
-import dotenv from "dotenv";
-dotenv.config();
 
-console.log("server.js: JWT_SECRET present?", !!process.env.JWT_SECRET);
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+// Resolve .env path (for local dev only)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, ".env") });
+
+// Debug logs to verify environment loading (keep for now)
+console.log("========================================");
+console.log("Environment check:");
+console.log("MONGO_URI:", process.env.MONGO_URI ? "Loaded" : "Missing");
+console.log("JWT_SECRET:", process.env.JWT_SECRET ? "Loaded" : "Missing");
+console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("========================================");
 
 import express from "express";
 import cors from "cors";
-import path from "path";
-import { fileURLToPath } from "url";
 import contactRouter from "./routes/contactRoutes.js";
 import { connectPrimaryDB } from "./db/connections.js";
 import userRouter from "./routes/userRoutes.js";
 import errorHandler from "./middleware/errorHandler.js";
 import safeplaceRoutes from "./routes/safeplaceRoutes.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
 
 // Middlewares
-app.use(cors()); // allow all origins in dev; restrict in production if needed
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Serve static uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Routes
@@ -35,23 +41,22 @@ app.use("/api/safeplaces", safeplaceRoutes);
 // Health check
 app.get("/", (req, res) => res.json({ ok: true }));
 
-// Error handler (should be last)
+// Error handler
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-// Use your provided machine IP for log output only; server binds to 0.0.0.0
-// const LAN_IP = "192.168.0.110";
-const LAN_IP = "192.168.0.102";
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+
 const start = async () => {
   try {
-    // Connect to DB (will throw if fails)
+    if (!process.env.MONGO_URI) {
+      throw new Error(" MONGO_URI is required but missing!");
+    }
+
     await connectPrimaryDB(process.env.MONGO_URI);
 
-    // Bind to 0.0.0.0 so devices on the same LAN can reach the server
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server listening on:`);
-      console.log(`  • Local:   http://localhost:${PORT}`);
-      console.log(`  • LAN:     http://${LAN_IP}:${PORT}  <-- use this from your phone`);
+      console.log(`Server running on ${BASE_URL}`);
       console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
     });
   } catch (e) {
