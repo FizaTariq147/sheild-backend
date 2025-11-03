@@ -24,6 +24,7 @@ import { connectPrimaryDB } from "./db/connections.js";
 import userRouter from "./routes/userRoutes.js";
 import errorHandler from "./middleware/errorHandler.js";
 import safeplaceRoutes from "./routes/safeplaceRoutes.js";
+import chatRouter from "./routes/chatRoutes.js"
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/api/users", userRouter);
 app.use("/api/contacts", contactRouter);
 app.use("/api/safeplaces", safeplaceRoutes);
+app.use('/api',chatRouter)
 
 // Health check
 app.get("/", (req, res) => res.json({ ok: true }));
