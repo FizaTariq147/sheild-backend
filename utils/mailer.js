@@ -1,5 +1,8 @@
 // utils/mailer.js
+import dotenv from "dotenv";
 import nodemailer from "nodemailer";
+
+dotenv.config();
 
 const smtpHost = process.env.SMTP_HOST;
 const smtpPort = process.env.SMTP_PORT;
