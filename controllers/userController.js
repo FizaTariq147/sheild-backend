@@ -57,6 +57,12 @@ const resolveFullName = ({ full_name, first_name, last_name, name }) => {
 };
 
 // register -> create pending and send OTP
+// controllers/user.controller.js
+// (keep your existing imports at top — ensure sendMail is imported from ../utils/mailer.js)
+import { generateOtp } from "../utils/otp.js";
+import { sendMail } from "../utils/mailer.js";
+
+// register -> create pending and send OTP
 export const register = async (req, res) => {
   try {
     const { full_name, first_name, last_name, name, phone, email, password } = req.body;
@@ -78,24 +84,43 @@ export const register = async (req, res) => {
       password_hash
     });
 
-    // create OTP and send (email_verif type)
+    // create OTP and store it (await this)
     const code = generateOtp(6);
     const ttl = parseInt(process.env.OTP_TTL_SECONDS || "300", 10);
     const expiresAt = new Date(Date.now() + ttl * MS);
     await createOtp({ target: email.toLowerCase(), code, type: "email_verif", expiresAt });
 
-    await sendMail({
-      to: email,
-      subject: "Verify your email",
-      html: `<p>Your verification code is <strong>${code}</strong>. It expires in ${ttl} seconds.</p>`
-    });
+    // Attempt to send mail and await it.
+    // If mail sending fails, we return 500 so you can notice and fix SMTP config
+    try {
+      const sendResult = await sendMail({
+        to: email,
+        subject: "Verify your email",
+        html: `<p>Your verification code is <strong>${code}</strong>. It expires in ${ttl} seconds.</p>`
+      });
 
-    return res.status(201).json({ message: "otp_sent", pendingId });
+      // If we used Ethereal for dev, include preview URL in response for convenience
+      if (sendResult?.previewUrl) {
+        // helpful during development: the client (or server logs) can show preview url
+        console.log("OTP email preview URL:", sendResult.previewUrl);
+        // Optionally, include previewUrl in response (useful for dev only)
+        return res.status(201).json({ message: "otp_sent", pendingId, previewUrl: sendResult.previewUrl });
+      }
+
+      // success path for real SMTP (no preview url)
+      return res.status(201).json({ message: "otp_sent", pendingId });
+    } catch (mailErr) {
+      console.error("register: sendMail failed:", mailErr?.message || mailErr);
+      // Note: OTP is already created and pending saved; but email failed.
+      // Return 502 to indicate email delivery problem (so you can fix SMTP).
+      return res.status(502).json({ error: "email_send_failed", details: String(mailErr?.message || mailErr) });
+    }
   } catch (error) {
     console.error("register error", error);
     res.status(400).json({ error: error.message });
   }
 };
+
 
 export const login = async (req, res) => {
   try {
