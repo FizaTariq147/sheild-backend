@@ -64,7 +64,7 @@ const start = async () => {
 
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on ${BASE_URL}`);
-      console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(`Environment: ${process.env.NODE_ENV || "production"}`);
     });
   } catch (e) {
     console.error("Startup error:", e);
