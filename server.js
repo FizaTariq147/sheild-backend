@@ -15,6 +15,10 @@ console.log("Environment check:");
 console.log("MONGO_URI:", process.env.MONGO_URI ? "Loaded" : "Missing");
 console.log("JWT_SECRET:", process.env.JWT_SECRET ? "Loaded" : "Missing");
 console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("SMTP_HOST:", process.env.SMTP_HOST);
+console.log("SMTP_PORT:", process.env.SMTP_PORT);
+console.log("SMTP_USER:", process.env.SMTP_USER);
+console.log("SMTP_PASS:", process.env.SMTP_PASS);
 console.log("========================================");
 
 import express from "express";
