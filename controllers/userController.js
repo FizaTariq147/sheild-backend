@@ -78,18 +78,29 @@ export const register = async (req, res) => {
       password_hash
     });
 
-    // create OTP and send (email_verif type)
+    // create OTP and store it (await this — important)
     const code = generateOtp(6);
     const ttl = parseInt(process.env.OTP_TTL_SECONDS || "300", 10);
     const expiresAt = new Date(Date.now() + ttl * MS);
     await createOtp({ target: email.toLowerCase(), code, type: "email_verif", expiresAt });
 
-    await sendMail({
+    // **FIRE-AND-FORGET** send email so registration is not blocked by slow SMTP
+    // sendMail returns a Promise; we intentionally do not await it here.
+    sendMail({
       to: email,
       subject: "Verify your email",
       html: `<p>Your verification code is <strong>${code}</strong>. It expires in ${ttl} seconds.</p>`
-    });
+    })
+      .then(() => {
+        // optional: you can log a success if you like
+        console.debug("OTP email queued/sent for", email);
+      })
+      .catch((err) => {
+        // do not fail the registration if mail sending fails — log for debugging
+        console.warn("sendMail failed (non-fatal):", err?.message || err);
+      });
 
+    // Respond immediately after OTP creation
     return res.status(201).json({ message: "otp_sent", pendingId });
   } catch (error) {
     console.error("register error", error);
