@@ -9,8 +9,8 @@ const smtpPort = process.env.SMTP_PORT;
 const smtpUser = process.env.SMTP_USER;
 const smtpPass = process.env.SMTP_PASS;
 
-// timeout in ms for sendMail operation (safety net)
-const MAIL_SEND_TIMEOUT_MS = parseInt(process.env.MAIL_SEND_TIMEOUT_MS || "5000", 10);
+// Safety timeouts (ms)
+const DEFAULT_SEND_TIMEOUT_MS = parseInt(process.env.MAIL_SEND_TIMEOUT_MS || "20000", 10); // 20s
 
 let transporter = null;
 let usingEthereal = false;
@@ -23,70 +23,98 @@ let usingEthereal = false;
 const initTransporter = async () => {
   if (transporter) return transporter;
 
-if (smtpHost && smtpPort && smtpUser && smtpPass) {
-  try {
-    transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: Number(smtpPort),
-      secure: Number(smtpPort) === 465,
-      auth: { user: smtpUser, pass: smtpPass },
-      // timeouts to avoid long blocking calls
-      greetingTimeout: 5000,     // wait for server greeting
-      connectionTimeout: 5000,   // socket connect timeout
-      socketTimeout: 5000,       // socket inactivity timeout
-      // optional pooling could be enabled for high volume:
-      // pool: true,
-    });
-  } catch (e) {
-    console.warn("Failed to create nodemailer transporter:", e?.message || e);
-    transporter = null;
+  if (smtpHost && smtpPort && smtpUser && smtpPass) {
+    // Use configured SMTP
+    try {
+      transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: Number(smtpPort),
+        secure: Number(smtpPort) === 465,
+        auth: { user: smtpUser, pass: smtpPass },
+        // Add timeouts to avoid long hangs
+        greetingTimeout: 10000,
+        connectionTimeout: 10000,
+        socketTimeout: 10000,
+      });
+      usingEthereal = false;
+      return transporter;
+    } catch (e) {
+      console.warn("Failed to create SMTP transporter, falling back to Ethereal:", e?.message || e);
+      transporter = null;
+    }
   }
-} else {
-  console.warn("SMTP is not fully configured. Emails will be logged to console.");
-}
+
+  // Fallback: create ethereal test account for local development
+  try {
+    const testAccount = await nodemailer.createTestAccount();
+    transporter = nodemailer.createTransport({
+      host: testAccount.smtp.host,
+      port: testAccount.smtp.port,
+      secure: testAccount.smtp.secure,
+      auth: { user: testAccount.user, pass: testAccount.pass },
+      greetingTimeout: 10000,
+      connectionTimeout: 10000,
+      socketTimeout: 10000,
+    });
+    usingEthereal = true;
+    console.log("[MAILER] Using Ethereal test account (development). Preview URLs will appear in server logs.");
+    return transporter;
+  } catch (err) {
+    console.error("Failed to create Ethereal test account:", err?.message || err);
+    transporter = null;
+    usingEthereal = false;
+    return null;
+  }
+};
 
 /**
- * sendMail - sends email via configured transporter, but with a safety timeout.
- * If transporter is not configured the function logs the message and resolves.
- *
- * @param {object} param0
- * @param {string} param0.to
- * @param {string} param0.subject
- * @param {string} [param0.text]
- * @param {string} [param0.html]
- * @returns {Promise<any>}
+ * sendMail - sends email via configured transporter, with a safety timeout.
+ * Returns an object: { ok: true, info, previewUrl? } on success.
+ * Throws on failure.
  */
-export const sendMail = async ({ to, subject, text, html }) => {
-  if (!transporter) {
-    // Mailer not configured: log and return resolved promise
-    console.log("[MAILER-LOG] to:", to);
-    console.log("[MAILER-LOG] subject:", subject);
-    if (html) console.log("[MAILER-LOG] html:", html);
-    else if (text) console.log("[MAILER-LOG] text:", text);
-    return { ok: true, logged: true };
+export const sendMail = async ({ to, subject, text, html, from }) => {
+  const t = await initTransporter();
+
+  if (!t) {
+    // no transporter available: log the message and throw so caller knows
+    console.warn("[MAILER] No transporter available. Email not sent. Logging message:");
+    console.log({ to, subject, text, html });
+    throw new Error("no_mail_transporter");
   }
 
   const mailOptions = {
-    from: smtpUser,
+    from: from || (process.env.SMTP_FROM || (usingEthereal ? `"No Reply" <no-reply@ethereal.test>` : process.env.SMTP_USER)),
     to,
     subject,
     text,
     html,
   };
 
-  // Use Promise.race to enforce a timeout for sendMail operation
-  const sendPromise = transporter.sendMail(mailOptions);
+  // sendMail promise
+  const sendPromise = t.sendMail(mailOptions);
 
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("sendMail_timeout")), Math.max(1000, MAIL_SEND_TIMEOUT_MS))
-  );
+  // safety timeout
+  const timeoutMs = DEFAULT_SEND_TIMEOUT_MS;
+  const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("sendMail_timeout")), timeoutMs));
 
   try {
-    const result = await Promise.race([sendPromise, timeoutPromise]);
-    return result;
+    const info = await Promise.race([sendPromise, timeoutPromise]);
+
+    // If using Ethereal, get preview URL
+    let previewUrl = null;
+    try {
+      previewUrl = nodemailer.getTestMessageUrl(info) || null;
+    } catch (e) {
+      previewUrl = null;
+    }
+
+    if (usingEthereal && previewUrl) {
+      console.log("[MAILER] Ethereal preview URL:", previewUrl);
+    }
+
+    return { ok: true, info, previewUrl };
   } catch (err) {
-    // bubble up the error to caller (caller may choose to ignore)
-    console.warn("sendMail error or timeout:", err?.message || err);
+    console.warn("[MAILER] sendMail error:", err?.message || err);
     throw err;
   }
 };
