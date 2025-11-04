@@ -57,11 +57,6 @@ const resolveFullName = ({ full_name, first_name, last_name, name }) => {
 };
 
 // register -> create pending and send OTP
-// controllers/user.controller.js
-// (keep your existing imports at top — ensure sendMail is imported from ../utils/mailer.js)
-import { generateOtp } from "../utils/otp.js";
-import { sendMail } from "../utils/mailer.js";
-
 // register -> create pending and send OTP
 export const register = async (req, res) => {
   try {
@@ -120,7 +115,6 @@ export const register = async (req, res) => {
     res.status(400).json({ error: error.message });
   }
 };
-
 
 export const login = async (req, res) => {
   try {
